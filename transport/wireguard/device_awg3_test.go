@@ -134,3 +134,16 @@ func TestAwgKeepaliveSpec(t *testing.T) {
 	lines = peerConfig{publicKeyHex: "aa", keepalive: ""}.GenerateIpcLines()
 	require.NotContains(t, lines, "persistent_keepalive_interval")
 }
+
+func TestBuildPeerDeltaPreservesUnchangedPeers(t *testing.T) {
+	current := []peerConfig{{publicKeyHex: "keep"}, {publicKeyHex: "remove"}, {publicKeyHex: "change", keepalive: "25"}}
+	candidate := []peerConfig{{publicKeyHex: "keep"}, {publicKeyHex: "change", keepalive: "30"}, {publicKeyHex: "add"}}
+
+	delta := buildPeerDelta(current, candidate)
+	require.NotContains(t, delta, "replace_peers=true")
+	require.NotContains(t, delta, "public_key=keep")
+	require.Contains(t, delta, "public_key=remove\nremove=true")
+	require.Contains(t, delta, "public_key=change")
+	require.Contains(t, delta, "persistent_keepalive_interval=30")
+	require.Contains(t, delta, "public_key=add")
+}

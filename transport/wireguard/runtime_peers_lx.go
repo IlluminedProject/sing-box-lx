@@ -35,29 +35,9 @@ func (e *Endpoint) ReplacePeers(peers []PeerOptions) error {
 	if err != nil {
 		return err
 	}
-	current := make(map[string]peerConfig, len(e.peers))
-	for _, peer := range e.peers {
-		current[peer.publicKeyHex] = peer
-	}
-	next := make(map[string]peerConfig, len(candidate))
-	for _, peer := range candidate {
-		next[peer.publicKeyHex] = peer
-	}
-	var config strings.Builder
-	for publicKey := range current {
-		if _, exists := next[publicKey]; !exists {
-			config.WriteString("\npublic_key=" + publicKey + "\nremove=true")
-		}
-	}
-	for publicKey, peer := range next {
-		previous, exists := current[publicKey]
-		if exists && peerConfigEqual(previous, peer) {
-			continue
-		}
-		config.WriteString(peer.GenerateIpcLines())
-	}
-	if config.Len() > 0 {
-		if err = e.device.IpcSet(config.String()); err != nil {
+	config := buildPeerDelta(e.peers, candidate)
+	if config != "" {
+		if err = e.device.IpcSet(config); err != nil {
 			return E.Cause(err, "update wireguard peers")
 		}
 	}
@@ -65,6 +45,31 @@ func (e *Endpoint) ReplacePeers(peers []PeerOptions) error {
 	e.allowedAddress = allowedPrefixes
 	e.allowedIPs = e.device.AllowedIPs()
 	return nil
+}
+
+func buildPeerDelta(current, candidate []peerConfig) string {
+	currentByKey := make(map[string]peerConfig, len(current))
+	for _, peer := range current {
+		currentByKey[peer.publicKeyHex] = peer
+	}
+	nextByKey := make(map[string]peerConfig, len(candidate))
+	for _, peer := range candidate {
+		nextByKey[peer.publicKeyHex] = peer
+	}
+	var config strings.Builder
+	for publicKey := range currentByKey {
+		if _, exists := nextByKey[publicKey]; !exists {
+			config.WriteString("\npublic_key=" + publicKey + "\nremove=true")
+		}
+	}
+	for publicKey, peer := range nextByKey {
+		previous, exists := currentByKey[publicKey]
+		if exists && peerConfigEqual(previous, peer) {
+			continue
+		}
+		config.WriteString(peer.GenerateIpcLines())
+	}
+	return config.String()
 }
 
 func peerConfigEqual(left, right peerConfig) bool {
