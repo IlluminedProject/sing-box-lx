@@ -5,6 +5,7 @@ import (
 	"encoding/hex"
 	"net/netip"
 	"os"
+	"slices"
 	"strings"
 	"sync"
 
@@ -22,9 +23,7 @@ func runtimePeerLock(e *Endpoint) *sync.Mutex {
 	return lock.(*sync.Mutex)
 }
 
-// ReplacePeers atomically swaps the peer set on a live device. Existing
-// sessions are not torn down; new handshakes use the new table. The
-// allowed-IPs routing snapshot is refreshed only after a successful IpcSet.
+// ReplacePeers applies only the peer delta. Unchanged peers remain alive.
 func (e *Endpoint) ReplacePeers(peers []PeerOptions) error {
 	lock := runtimePeerLock(e)
 	lock.Lock()
@@ -36,18 +35,46 @@ func (e *Endpoint) ReplacePeers(peers []PeerOptions) error {
 	if err != nil {
 		return err
 	}
-	var config strings.Builder
-	config.WriteString("replace_peers=true")
+	current := make(map[string]peerConfig, len(e.peers))
+	for _, peer := range e.peers {
+		current[peer.publicKeyHex] = peer
+	}
+	next := make(map[string]peerConfig, len(candidate))
 	for _, peer := range candidate {
+		next[peer.publicKeyHex] = peer
+	}
+	var config strings.Builder
+	for publicKey := range current {
+		if _, exists := next[publicKey]; !exists {
+			config.WriteString("\npublic_key=" + publicKey + "\nremove=true")
+		}
+	}
+	for publicKey, peer := range next {
+		previous, exists := current[publicKey]
+		if exists && peerConfigEqual(previous, peer) {
+			continue
+		}
 		config.WriteString(peer.GenerateIpcLines())
 	}
-	if err = e.device.IpcSet(config.String()); err != nil {
-		return E.Cause(err, "replace wireguard peers")
+	if config.Len() > 0 {
+		if err = e.device.IpcSet(config.String()); err != nil {
+			return E.Cause(err, "update wireguard peers")
+		}
 	}
 	e.peers = candidate
 	e.allowedAddress = allowedPrefixes
 	e.allowedIPs = e.device.AllowedIPs()
 	return nil
+}
+
+func peerConfigEqual(left, right peerConfig) bool {
+	return left.destination == right.destination &&
+		left.endpoint == right.endpoint &&
+		left.publicKeyHex == right.publicKeyHex &&
+		left.preSharedKeyHex == right.preSharedKeyHex &&
+		left.keepalive == right.keepalive &&
+		left.reserved == right.reserved &&
+		slices.Equal(left.allowedIPs, right.allowedIPs)
 }
 
 func buildPeerSnapshot(peers []PeerOptions) ([]peerConfig, []netip.Prefix, error) {
@@ -104,4 +131,5 @@ func buildPeerSnapshot(peers []PeerOptions) ([]peerConfig, []netip.Prefix, error
 	}
 	return candidate, allowedIPSet.Prefixes(), nil
 }
+
 // lx:end runtime-management
