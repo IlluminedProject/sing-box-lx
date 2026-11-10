@@ -76,11 +76,8 @@ func NewRealityServer(ctx context.Context, logger log.ContextLogger, options opt
 	if len(options.CurvePreferences) > 0 {
 		return nil, E.New("curve preferences is unavailable in reality")
 	}
-	if len(options.Certificate) > 0 || options.CertificatePath != "" || len(options.ClientCertificatePublicKeySHA256) > 0 {
+	if len(options.Certificates) > 0 || len(options.Certificate) > 0 || options.CertificatePath != "" || len(options.Key) > 0 || options.KeyPath != "" {
 		return nil, E.New("certificate is unavailable in reality")
-	}
-	if len(options.Key) > 0 || options.KeyPath != "" {
-		return nil, E.New("key is unavailable in reality")
 	}
 
 	tlsConfig.SessionTicketsDisabled = true

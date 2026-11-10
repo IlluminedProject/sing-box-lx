@@ -109,6 +109,12 @@ type STDServerConfig struct {
 	clientCertificatePath []string
 	echKeyPath            string
 	watcher               *fswatch.Watcher
+	// lx:begin inbound-multi-certificate SPEC 153
+	certificates       []tls.Certificate
+	certificatePaths   []string
+	keyPaths           []string
+	certificateOptions []option.InboundTLSCertificateOptions
+	// lx:end inbound-multi-certificate
 }
 
 func (c *STDServerConfig) ServerName() string {
@@ -233,6 +239,10 @@ func (c *STDServerConfig) startWatcher() error {
 	if c.keyPath != "" {
 		watchPath = append(watchPath, c.keyPath)
 	}
+	// lx:begin inbound-multi-certificate SPEC 153
+	watchPath = append(watchPath, c.certificatePaths...)
+	watchPath = append(watchPath, c.keyPaths...)
+	// lx:end inbound-multi-certificate
 	if c.echKeyPath != "" {
 		watchPath = append(watchPath, c.echKeyPath)
 	}
@@ -263,6 +273,23 @@ func (c *STDServerConfig) startWatcher() error {
 }
 
 func (c *STDServerConfig) certificateUpdated(path string) error {
+	// lx:begin inbound-multi-certificate SPEC 153
+	if common.Contains(c.certificatePaths, path) || common.Contains(c.keyPaths, path) {
+		certificates, err := loadInboundCertificates(c.ctx, c.certificateOptions)
+		if err != nil {
+			return err
+		}
+		c.access.Lock()
+		config := c.config.Clone()
+		config.Certificates = certificates
+		c.config = config
+		c.certificates = certificates
+		c.access.Unlock()
+		c.logger.Info("reloaded TLS certificates")
+		return nil
+	}
+	// lx:end inbound-multi-certificate
+
 	if path == c.certificatePath || path == c.keyPath {
 		switch path {
 		case c.certificatePath:
@@ -403,30 +430,24 @@ func NewSTDServer(ctx context.Context, logger log.ContextLogger, options option.
 		tlsConfig.CurvePreferences = append(tlsConfig.CurvePreferences, tls.CurveID(curveID))
 	}
 	tlsConfig.ClientAuth = tls.ClientAuthType(options.ClientAuthentication)
-	var (
-		certificate []byte
-		key         []byte
-	)
+	// lx:begin inbound-multi-certificate SPEC 153
+	var serverCertificatePaths []string
+	var serverKeyPaths []string
+	// lx:end inbound-multi-certificate
 	if certificateProvider == nil && acmeService == nil {
-		if len(options.Certificate) > 0 {
-			certificate = []byte(strings.Join(options.Certificate, "\n"))
-		} else if options.CertificatePath != "" {
-			content, err := filemanager.ReadFile(ctx, options.CertificatePath)
-			if err != nil {
-				return nil, E.Cause(err, "read certificate")
-			}
-			certificate = content
+		// lx:begin inbound-multi-certificate SPEC 153
+		if len(options.Certificate) > 0 || options.CertificatePath != "" || len(options.Key) > 0 || options.KeyPath != "" {
+			return nil, E.New("singular inbound certificate fields are not supported; use certificates")
 		}
-		if len(options.Key) > 0 {
-			key = []byte(strings.Join(options.Key, "\n"))
-		} else if options.KeyPath != "" {
-			content, err := filemanager.ReadFile(ctx, options.KeyPath)
+		if len(options.Certificates) > 0 {
+			certificates, certificatePaths, keyPaths, err := loadInboundCertificateOptions(ctx, options.Certificates)
 			if err != nil {
-				return nil, E.Cause(err, "read key")
+				return nil, err
 			}
-			key = content
-		}
-		if certificate == nil && key == nil && options.Insecure {
+			tlsConfig.Certificates = certificates
+			serverCertificatePaths = certificatePaths
+			serverKeyPaths = keyPaths
+		} else if options.Insecure {
 			timeFunc := ntp.TimeFuncFromContext(ctx)
 			if timeFunc == nil {
 				timeFunc = time.Now
@@ -435,19 +456,11 @@ func NewSTDServer(ctx context.Context, logger log.ContextLogger, options option.
 				return GenerateKeyPair(nil, nil, timeFunc, info.ServerName)
 			}
 		} else {
-			if certificate == nil {
-				return nil, E.New("missing certificate")
-			} else if key == nil {
-				return nil, E.New("missing key")
-			}
-
-			keyPair, err := tls.X509KeyPair(certificate, key)
-			if err != nil {
-				return nil, E.Cause(err, "parse x509 key pair")
-			}
-			tlsConfig.Certificates = []tls.Certificate{keyPair}
+			return nil, E.New("missing certificates")
 		}
+		// lx:end inbound-multi-certificate
 	}
+
 	if len(options.ClientCertificate) > 0 || len(options.ClientCertificatePath) > 0 {
 		if tlsConfig.ClientAuth == tls.NoClientCert {
 			tlsConfig.ClientAuth = tls.RequireAndVerifyClientCert
@@ -506,17 +519,14 @@ func NewSTDServer(ctx context.Context, logger log.ContextLogger, options option.
 		logger:                logger,
 		certificateProvider:   certificateProvider,
 		acmeService:           acmeService,
-		certificate:           certificate,
-		key:                   key,
-		certificatePath:       options.CertificatePath,
 		clientCertificatePath: options.ClientCertificatePath,
-		keyPath:               options.KeyPath,
-		echKeyPath:            echKeyPath,
-	}
-	serverConfig.config.GetConfigForClient = func(info *tls.ClientHelloInfo) (*tls.Config, error) {
-		serverConfig.access.RLock()
-		defer serverConfig.access.RUnlock()
-		return serverConfig.config, nil
+		// lx:begin inbound-multi-certificate SPEC 153
+		certificates:       tlsConfig.Certificates,
+		certificatePaths:   serverCertificatePaths,
+		keyPaths:           serverKeyPaths,
+		certificateOptions: append([]option.InboundTLSCertificateOptions(nil), options.Certificates...),
+		// lx:end inbound-multi-certificate
+		echKeyPath: echKeyPath,
 	}
 	var config ServerConfig = serverConfig
 	if options.KernelTx || options.KernelRx {

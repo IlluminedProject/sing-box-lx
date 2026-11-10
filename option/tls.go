@@ -19,14 +19,15 @@ type InboundTLSOptions struct {
 	MaxVersion                       string                              `json:"max_version,omitempty" enum:"1.0,1.1,1.2,1.3"`
 	CipherSuites                     badoption.Listable[string]          `json:"cipher_suites,omitempty"`
 	CurvePreferences                 badoption.Listable[CurvePreference] `json:"curve_preferences,omitempty"`
-	Certificate                      badoption.Listable[string]          `json:"certificate,omitempty"`
-	CertificatePath                  string                              `json:"certificate_path,omitempty"`
+	Certificate                      badoption.Listable[string]          `json:"certificate,omitempty" schema:"omit"`
+	CertificatePath                  string                              `json:"certificate_path,omitempty" schema:"omit"`
+	Certificates                     []InboundTLSCertificateOptions      `json:"certificates,omitempty"`
 	ClientAuthentication             ClientAuthType                      `json:"client_authentication,omitempty"`
 	ClientCertificate                badoption.Listable[string]          `json:"client_certificate,omitempty"`
 	ClientCertificatePath            badoption.Listable[string]          `json:"client_certificate_path,omitempty"`
 	ClientCertificatePublicKeySHA256 badoption.Listable[[]byte]          `json:"client_certificate_public_key_sha256,omitempty"`
-	Key                              badoption.Listable[string]          `json:"key,omitempty"`
-	KeyPath                          string                              `json:"key_path,omitempty"`
+	Key                              badoption.Listable[string]          `json:"key,omitempty" schema:"omit"`
+	KeyPath                          string                              `json:"key_path,omitempty" schema:"omit"`
 	KernelTx                         bool                                `json:"kernel_tx,omitempty"`
 	KernelRx                         bool                                `json:"kernel_rx,omitempty"`
 	HandshakeTimeout                 badoption.Duration                  `json:"handshake_timeout,omitempty"`
@@ -37,6 +38,13 @@ type InboundTLSOptions struct {
 
 	ECH     *InboundECHOptions     `json:"ech,omitempty"`
 	Reality *InboundRealityOptions `json:"reality,omitempty"`
+}
+
+type InboundTLSCertificateOptions struct {
+	Certificate     badoption.Listable[string] `json:"certificate,omitempty"`
+	CertificatePath string                     `json:"certificate_path,omitempty"`
+	Key             badoption.Listable[string] `json:"key,omitempty"`
+	KeyPath         string                     `json:"key_path,omitempty"`
 }
 
 type ClientAuthType tls.ClientAuthType

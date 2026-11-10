@@ -8295,8 +8295,28 @@
           "$ref": "#/$defs/Duration"
         }
       },
-      "additionalProperties": false
-    },
+       "additionalProperties": false
+     },
+     "InboundTLSCertificateOptions": {
+       "type": "object",
+       "properties": {
+         "certificate": {
+           "anyOf": [
+             {"type": "string"},
+             {"type": "array", "items": {"type": "string"}}
+           ]
+         },
+         "certificate_path": {"type": "string"},
+         "key": {
+           "anyOf": [
+             {"type": "string"},
+             {"type": "array", "items": {"type": "string"}}
+           ]
+         },
+         "key_path": {"type": "string"}
+       },
+       "additionalProperties": false
+     },
     "InboundTLSOptions": {
       "type": "object",
       "properties": {
@@ -8390,22 +8410,10 @@
             }
           ]
         },
-        "certificate": {
-          "anyOf": [
-            {
-              "type": "string"
-            },
-            {
-              "type": "array",
-              "items": {
-                "type": "string"
-              }
-            }
-          ]
-        },
-        "certificate_path": {
-          "type": "string"
-        },
+         "certificates": {
+           "type": "array",
+           "items": {"$ref": "#/$defs/InboundTLSCertificateOptions"}
+         },
         "client_authentication": {
           "type": "string",
           "enum": [

@@ -89,16 +89,20 @@ func mergeTLSInboundOptions(options *option.InboundTLSOptions) *option.InboundTL
 	if options == nil {
 		return nil
 	}
-	if options.CertificatePath != "" {
-		if content, err := os.ReadFile(options.CertificatePath); err == nil {
-			options.Certificate = trimStringArray(strings.Split(string(content), "\n"))
+	// lx:begin inbound-multi-certificate SPEC 153
+	for index, certificate := range options.Certificates {
+		if certificate.CertificatePath != "" {
+			if content, err := os.ReadFile(certificate.CertificatePath); err == nil {
+				options.Certificates[index].Certificate = trimStringArray(strings.Split(string(content), "\n"))
+			}
+		}
+		if certificate.KeyPath != "" {
+			if content, err := os.ReadFile(certificate.KeyPath); err == nil {
+				options.Certificates[index].Key = trimStringArray(strings.Split(string(content), "\n"))
+			}
 		}
 	}
-	if options.KeyPath != "" {
-		if content, err := os.ReadFile(options.KeyPath); err == nil {
-			options.Key = trimStringArray(strings.Split(string(content), "\n"))
-		}
-	}
+	// lx:end inbound-multi-certificate
 	if options.ECH != nil {
 		if options.ECH.KeyPath != "" {
 			if content, err := os.ReadFile(options.ECH.KeyPath); err == nil {
